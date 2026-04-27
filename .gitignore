@@ -1,0 +1,48 @@
+.venv/
+spoof_env/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.ipynb_checkpoints/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Data & artifacts (large / generated)
+data_set/
+datasets/
+runs/
+test_image/
+
+# Model/export artifacts (generated)
+*.onnx
+*.engine
+*.torchscript
+*.mlpackage
+*.tflite
+*.openvino/
+*.ptl
+
+# Images (avoid committing datasets/predictions)
+*.jpg
+*.jpeg
+*.png
+*.webp
+*.bmp
+*.gif
+*.tif
+*.tiff
+
+# Logs
+*.log
+
+# Ultralytics may generate these
+*.cache
