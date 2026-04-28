@@ -21,6 +21,7 @@ data_set/
 datasets/
 runs/
 test_image/
+face_crop/
 
 # Model/export artifacts (generated)
 *.onnx
@@ -44,10 +45,6 @@ test_image/
 
 # Logs
 *.log
-
-# Text / JSON artifacts (generated, metadata, reports)
-*_BB.txt
-*.json
 
 # Ultralytics may generate these
 *.cache
