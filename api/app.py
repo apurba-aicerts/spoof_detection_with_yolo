@@ -15,7 +15,7 @@ from PIL import Image
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_WEIGHTS = REPO_ROOT / "runs" / "spoof_cls" / "exp-21" / "weights" / "best.pt"
+DEFAULT_WEIGHTS = REPO_ROOT / "runs" / "spoof_face_cls" / "exp-face-only" / "weights" / "best.pt"
 
 log = logging.getLogger("api")
 
@@ -137,7 +137,7 @@ def health() -> dict:
     weights = Path(os.getenv("SPOOF_WEIGHTS", str(DEFAULT_WEIGHTS))).expanduser()
     if not weights.is_absolute():
         weights = (REPO_ROOT / weights).resolve()
-    return {"ok": True, "weights_exists": weights.exists(), "weights": str(weights)}
+    return {"ok": True, "weights_exists": weights.exists(), "weights": str(weights), "expects_face_crop": True}
 
 
 @app.post("/predict/upload", response_model=PredictResponse)

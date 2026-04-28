@@ -23,7 +23,7 @@ def main() -> None:
     repo_root = Path(__file__).resolve().parents[1]
 
     ap = argparse.ArgumentParser()
-    ap.add_argument("--data", type=Path, default=Path("datasets/spoof_cls"), help="Dataset root")
+    ap.add_argument("--data", type=Path, default=Path("datasets/spoof_face_cls"), help="Dataset root")
     ap.add_argument("--model", type=str, default="yolo26m-cls.pt", help="Pretrained model (.pt)")
     ap.add_argument("--epochs", type=int, default=50)
     ap.add_argument("--imgsz", type=int, default=224)
@@ -39,7 +39,7 @@ def main() -> None:
         default=0 if is_wsl else 8,
         help="Dataloader workers (0 is most stable on WSL2/low /dev/shm)",
     )
-    ap.add_argument("--out", type=Path, default=Path("runs/spoof_cls"), help="Output folder (saved inside repo)")
+    ap.add_argument("--out", type=Path, default=Path("runs/spoof_face_cls"), help="Output folder (saved inside repo)")
     ap.add_argument("--name", type=str, default="exp")
     args = ap.parse_args()
 

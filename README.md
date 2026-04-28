@@ -66,13 +66,16 @@ Non-goals (for now):
 ### Functional requirements
 - **Dataset prep**
   - Accept input root (default `data_set/`)
-  - Produce output dataset root (default `datasets/spoof_cls/`)
+  - Produce output dataset root (default `datasets/spoof_face_cls/`)
   - Resize images to a square `--imgsz` (default 224)
   - Stratified `train/val/test` split with `--seed`
   - Optional dataset size cap `--max_total` and optional `--balance` sampling
+  - Supports two face-crop strategies:
+    - RetinaFace `*_BB.txt` crops (offline boxes shipped with dataset)
+    - MediaPipe BlazeFace crops (run detector during dataset prep)
 - **Training**
   - Train from a pretrained YOLO classification checkpoint
-  - Save runs under `runs/spoof_cls/`
+  - Save runs under `runs/spoof_face_cls/`
 - **Serving**
   - Provide `/health`, `/predict/upload`, and `/predict/url` endpoints
   - Lazy-load model on first prediction request (faster, safer startup)
@@ -104,9 +107,10 @@ Non-goals (for now):
 ```mermaid
 flowchart LR
   A[data_set/<id>/{live,spoof}/*.jpg] --> B[scripts/prepare_cls_dataset.py]
-  B --> C[datasets/spoof_cls/{train,val,test}/{real,spoof}]
+  A2[data_set/<id>/{live,spoof}/*_BB.txt] --> B
+  B --> C[datasets/spoof_face_cls/{train,val,test}/{real,spoof}]
   C --> D[scripts/train_cls.py]
-  D --> E[runs/spoof_cls/<exp>/weights/best.pt]
+  D --> E[runs/spoof_face_cls/<exp>/weights/best.pt]
   E --> F[scripts/predict_folder_cls.py]
   E --> G[api/app.py (FastAPI)]
   H[Windows webcam client] -->|/predict/upload| G
@@ -153,17 +157,36 @@ pip install -r requirements.txt --force-reinstall
 ### 1) Prepare a YOLO classification dataset
 
 Creates an Ultralytics classification dataset with the structure:
-`datasets/spoof_cls/{train,val,test}/{real,spoof}`
+`datasets/spoof_face_cls/{train,val,test}/{real,spoof}`
 
-By default this script writes **full images** resized to `--imgsz` (default 224).
+#### Option A (RetinaFace `*_BB.txt`) — recommended baseline
+
+This uses the dataset’s companion `*_BB.txt` files (RetinaFace boxes stored in a 224×224 reference space; scaled to the real image size), then crops the face ROI and resizes to `--imgsz`.
 
 ```bash
 python3 scripts/prepare_cls_dataset.py \
   --input data_set \
-  --output datasets/spoof_cls \
+  --output datasets/spoof_face_cls \
   --imgsz 224 \
+  --min_bb_conf 0.8 \
   --val 0.1 \
   --seed 42
+```
+
+#### Option B (MediaPipe) — crop faces before training (matches Windows testing crop)
+
+This runs **MediaPipe BlazeFace** on each full image, crops the best face, expands the box using padding (to include more head), then resizes to `--imgsz`.
+
+```bash
+python3 scripts/prepare_cls_dataset_mediapipe.py \
+  --input data_set \
+  --output datasets/spoof_mp_face_cls \
+  --imgsz 224 \
+  --val 0.1 \
+  --seed 42 \
+  --mp_min_conf 0.6 \
+  --mp_pad 0.20 \
+  --mp_pad_top_mult 1.5
 ```
 
 Optional controls:
@@ -185,13 +208,19 @@ python3 scripts/prepare_cls_dataset.py --max_total 10000 --balance
 python3 scripts/prepare_cls_dataset.py --test 0.1
 ```
 
+These flags also work with the MediaPipe dataset builder:
+
+```bash
+python3 scripts/prepare_cls_dataset_mediapipe.py --max_total 10000 --balance --test 0.1
+```
+
 ### 2) Train
 
-Trains a YOLO classification model and writes outputs under `runs/spoof_cls/`.
+Trains a YOLO classification model and writes outputs under `runs/spoof_face_cls/` (or whichever dataset you built).
 
 ```bash
 python3 scripts/train_cls.py \
-  --data datasets/spoof_cls \
+  --data datasets/spoof_face_cls \
   --model yolo26m-cls.pt \
   --epochs 50 \
   --imgsz 224 \
@@ -206,7 +235,7 @@ Notes:
 
 ```bash
 python3 scripts/predict_folder_cls.py \
-  --weights runs/spoof_cls/exp/weights/best.pt \
+  --weights runs/spoof_face_cls/exp-face-only/weights/best.pt \
   --source test_image
 ```
 
@@ -214,16 +243,16 @@ To also copy all images predicted as spoof into a review folder:
 
 ```bash
 python3 scripts/predict_folder_cls.py \
-  --weights runs/spoof_cls/exp/weights/best.pt \
+  --weights runs/spoof_face_cls/exp-face-only/weights/best.pt \
   --source test_image \
-  --spoof_dir runs/spoof_cls/spoof_test
+  --spoof_dir runs/spoof_face_cls/spoof_test
 ```
 
 ### 4) Export (ONNX example)
 
 ```bash
 python3 scripts/export_cls.py \
-  --weights runs/spoof_cls/exp/weights/best.pt \
+  --weights runs/spoof_face_cls/exp-face-only/weights/best.pt \
   --format onnx \
   --imgsz 224 \
   --device cpu
@@ -244,12 +273,12 @@ Defaults (from `scripts/run_api.py`):
 - **PORT**: `8011`
 
 The FastAPI app itself loads weights from `SPOOF_WEIGHTS` if set, otherwise defaults to:
-- `runs/spoof_cls/exp-21/weights/best.pt` (see `api/app.py`)
+- `runs/spoof_face_cls/exp-face-only/weights/best.pt` (see `api/app.py`)
 
 Override weights:
 
 ```bash
-SPOOF_WEIGHTS="runs/spoof_cls/exp-21/weights/best.pt" python3 scripts/run_api.py
+SPOOF_WEIGHTS="runs/spoof_face_cls/exp-face-only/weights/best.pt" python3 scripts/run_api.py
 ```
 
 ### Endpoints

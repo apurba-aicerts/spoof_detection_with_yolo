@@ -15,7 +15,7 @@ def main() -> None:
     ap.add_argument(
         "--spoof_dir",
         type=Path,
-        default=Path("runs/spoof_cls/spoof_test"),
+        default=Path("runs/spoof_face_cls/spoof_test"),
         help="Where to save images predicted as spoof (relative to repo by default)",
     )
     ap.add_argument(

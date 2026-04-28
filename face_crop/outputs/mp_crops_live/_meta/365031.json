@@ -1,0 +1,30 @@
+{
+  "src": "/home/apurba/spoof_detection/face_crop/sample/live/365031.jpg",
+  "dst": "/home/apurba/spoof_detection/face_crop/outputs/mp_crops_live/365031__mp_pad0.2_top1.5.jpg",
+  "min_conf": 0.6,
+  "score": 0.8211569786071777,
+  "xyxy_raw": [
+    130,
+    83,
+    255,
+    207
+  ],
+  "xyxy_padded": [
+    105,
+    45,
+    280,
+    232
+  ],
+  "pad": 0.2,
+  "pad_top_mult": 1.5,
+  "src_shape_hwc": [
+    594,
+    396,
+    3
+  ],
+  "crop_shape_hwc": [
+    187,
+    175,
+    3
+  ]
+}

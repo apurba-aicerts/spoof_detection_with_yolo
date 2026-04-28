@@ -59,6 +59,7 @@ nvidia-nvshmem-cu13==3.4.5
 nvidia-nvtx==13.0.85
 nvidia-nvtx-cu12==12.8.90
 opencv-python==4.13.0.92
+mediapipe==0.10.21
 packaging==26.1
 pillow==12.2.0
 polars==1.40.1

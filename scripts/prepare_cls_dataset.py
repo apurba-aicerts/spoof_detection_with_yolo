@@ -7,14 +7,14 @@ Input (current workspace):
   data_set/<split_id>/{live,spoof}/*_BB.txt   (bounding box: x y w h conf)
 
 Output (Ultralytics classification):
-  datasets/spoof_cls/
+  datasets/spoof_face_cls/
     train/{real,spoof}/
     val/{real,spoof}/
     test/{real,spoof}/
 
 Notes:
 - We ignore Windows ADS artifacts like `:Zone.Identifier`.
-- This script builds **full-image** classification splits (real vs spoof).
+- This script builds a **face-cropped** classification dataset using the companion `*_BB.txt` boxes.
 """
 
 from __future__ import annotations
@@ -25,8 +25,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
-from PIL import Image
 from collections import Counter
+
+from PIL import Image
 
 
 IMG_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
@@ -58,6 +59,54 @@ def _save_jpeg(im: Image.Image, out_path: Path, quality: int = 95) -> None:
     if im.mode != "RGB":
         im = im.convert("RGB")
     im.save(out_path, format="JPEG", quality=quality, optimize=True)
+
+
+def _clamp(v: float, lo: float, hi: float) -> float:
+    return max(lo, min(hi, v))
+
+
+def _parse_bb_file(bb_path: Path) -> tuple[float, float, float, float, float | None]:
+    """
+    BB format (per data_set/README):
+      x y w h conf
+    Coordinates are stored in a ref-size space (typically 224x224).
+    """
+    parts = bb_path.read_text(encoding="utf-8", errors="ignore").strip().split()
+    if len(parts) < 4:
+        raise ValueError(f"Invalid BB file (need at least 4 numbers): {bb_path}")
+    x, y, w, h = map(float, parts[:4])
+    conf = float(parts[4]) if len(parts) >= 5 else None
+    return x, y, w, h, conf
+
+
+def _crop_face_from_bb(
+    im: Image.Image,
+    bb_path: Path,
+    *,
+    ref_size: int,
+    min_conf: float,
+) -> Image.Image:
+    w_img, h_img = im.size
+    x, y, w, h, conf = _parse_bb_file(bb_path)
+    if conf is not None and conf < min_conf:
+        raise ValueError(f"BB conf too low: {conf:.4f} < {min_conf:.4f}")
+
+    if ref_size and ref_size > 0:
+        sx = w_img / float(ref_size)
+        sy = h_img / float(ref_size)
+        x *= sx
+        y *= sy
+        w *= sx
+        h *= sy
+
+    x1 = _clamp(x, 0, w_img)
+    y1 = _clamp(y, 0, h_img)
+    x2 = _clamp(x + w, 0, w_img)
+    y2 = _clamp(y + h, 0, h_img)
+
+    if (x2 - x1) < 2 or (y2 - y1) < 2:
+        raise ValueError(f"Degenerate crop after clamp: {(x1, y1, x2, y2)} for image {w_img}x{h_img}")
+    return im.crop((int(x1), int(y1), int(x2), int(y2)))
 
 
 def _collect_samples(dataset_root: Path) -> list[Sample]:
@@ -113,8 +162,10 @@ def _stratified_split(samples: list[Sample], val_ratio: float, test_ratio: float
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--input", type=Path, default=Path("data_set"), help="Input dataset root")
-    ap.add_argument("--output", type=Path, default=Path("datasets/spoof_cls"), help="Output dataset root")
+    ap.add_argument("--output", type=Path, default=Path("datasets/spoof_face_cls"), help="Output dataset root")
     ap.add_argument("--imgsz", type=int, default=224, help="Resize to square")
+    ap.add_argument("--bb_ref", type=int, default=224, help="BB reference size used for stored coords (224 per data_set/README)")
+    ap.add_argument("--min_bb_conf", type=float, default=0.8, help="Skip crops with BB confidence below this threshold")
     ap.add_argument("--val", type=float, default=0.1, help="Validation ratio")
     ap.add_argument("--test", type=float, default=0.0, help="Test ratio (0 disables)")
     ap.add_argument("--seed", type=int, default=42, help="Random seed")
@@ -196,6 +247,8 @@ def main() -> None:
 
     n_written = 0
     n_failed = 0
+    n_missing_bb = 0
+    n_lowconf_bb = 0
     total_by_class: Counter[str] = Counter()
     written_by_split_class: Counter[tuple[str, str]] = Counter()
 
@@ -214,6 +267,16 @@ def main() -> None:
             im.load()
 
             im = im.convert("RGB")
+            bb_path = s.img_path.with_name(f"{s.img_path.stem}_BB.txt")
+            if not bb_path.exists():
+                n_missing_bb += 1
+                raise FileNotFoundError(f"Missing BB: {bb_path}")
+            try:
+                im = _crop_face_from_bb(im, bb_path, ref_size=int(args.bb_ref), min_conf=float(args.min_bb_conf))
+            except ValueError as e:
+                if "conf too low" in str(e):
+                    n_lowconf_bb += 1
+                raise
             if args.imgsz and args.imgsz > 0:
                 im = im.resize((args.imgsz, args.imgsz), resample=Image.BICUBIC)
             _save_jpeg(im, out_path)
@@ -228,6 +291,10 @@ def main() -> None:
         "samples_total": len(samples),
         "written": n_written,
         "failed": n_failed,
+        "bb_ref": int(args.bb_ref),
+        "min_bb_conf": float(args.min_bb_conf),
+        "missing_bb": n_missing_bb,
+        "lowconf_bb": n_lowconf_bb,
         "max_total": args.max_total,
         "balance": bool(args.balance),
         "val_ratio": args.val,
