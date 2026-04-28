@@ -15,7 +15,7 @@ from PIL import Image
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_WEIGHTS = REPO_ROOT / "runs" / "spoof_face_cls" / "exp-face-only" / "weights" / "best.pt"
+DEFAULT_WEIGHTS = REPO_ROOT / "runs" / "spoof_face_cls" / "exp-2" / "weights" / "best.pt"
 
 log = logging.getLogger("api")
 
