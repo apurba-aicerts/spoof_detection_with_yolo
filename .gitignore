@@ -45,5 +45,9 @@ test_image/
 # Logs
 *.log
 
+# Text / JSON artifacts (generated, metadata, reports)
+*_BB.txt
+*.json
+
 # Ultralytics may generate these
 *.cache
