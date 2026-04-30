@@ -1,3 +1,10 @@
+"""Face-cropping utilities based on MediaPipe BlazeFace.
+
+This module provides a cached MediaPipe face detector and helpers to crop the
+best face ROI from an RGB numpy array. It is used by dataset preparation
+pipelines and can be imported lazily when MediaPipe is available.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

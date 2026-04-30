@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+"""Run batch predictions on a folder and optionally save predicted spoof images.
+
+This is a quick evaluation/triage tool: it predicts each image under `--source`,
+prints class counts, and copies images predicted as `--spoof_name` into
+`--spoof_dir`.
+"""
+
 from __future__ import annotations
 
 import argparse

@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+"""Entrypoint to run the FastAPI app with Hypercorn.
+
+This wrapper adds the repo root to `sys.path`, optionally forces CPU mode via
+`API_FORCE_CPU`, enables faulthandler for native-crash visibility, and then
+starts the server bound to `HOST`/`PORT`.
+"""
+
 from __future__ import annotations
 
 import asyncio

@@ -1,3 +1,10 @@
+"""FastAPI service for spoof-vs-real face classification.
+
+Exposes prediction endpoints that accept an uploaded image or an image URL and
+returns the top-1 class label with confidence using an Ultralytics YOLO
+classification model. The model is loaded lazily on first request.
+"""
+
 from __future__ import annotations
 
 import logging
@@ -15,7 +22,7 @@ from PIL import Image
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_WEIGHTS = REPO_ROOT / "runs" / "spoof_face_cls" / "exp-2" / "weights" / "best.pt"
+DEFAULT_WEIGHTS = REPO_ROOT / "runs" / "spoof_face_cls" / "exp-3" / "weights" / "best.pt"
 
 log = logging.getLogger("api")
 

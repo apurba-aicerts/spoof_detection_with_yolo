@@ -1,6 +1,4 @@
 #!/usr/bin/env python3
-from __future__ import annotations
-
 """
 Build an Ultralytics *classification* dataset from `data_set/` using MediaPipe face cropping.
 
@@ -18,6 +16,8 @@ Notes:
   then resize to imgsz and save as JPEG.
 - Label mapping: source `live` -> `real`, `spoof` -> `spoof`.
 """
+
+from __future__ import annotations
 
 import argparse
 import random

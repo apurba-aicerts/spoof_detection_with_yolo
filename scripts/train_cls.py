@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+"""Train an Ultralytics YOLO *classification* model for spoof detection.
+
+Reads a prepared classification dataset (see `scripts/prepare_cls_dataset*.py`)
+and runs Ultralytics training, choosing a stable default `--workers` value on
+WSL2.
+"""
+
 from __future__ import annotations
 
 import argparse

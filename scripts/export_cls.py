@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+"""Export a trained Ultralytics classification model to deployment formats.
+
+Typical use is converting a trained `best.pt` to ONNX/OpenVINO/TensorRT, etc.
+"""
+
 from __future__ import annotations
 
 import argparse
