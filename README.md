@@ -96,11 +96,14 @@ Non-goals (for now):
 
 ### Components
 - **Dataset builder**: `scripts/prepare_cls_dataset.py`
+- **Detection dataset builder (experimental)**: `scripts/prepare_det_dataset_mediapipe.py`
 - **Trainer**: `scripts/train_cls.py`
+- **Detection trainer (experimental)**: `scripts/train_det.py`
 - **Batch inference**: `scripts/predict_folder_cls.py`
 - **Exporter**: `scripts/export_cls.py`
 - **API server**: `scripts/run_api.py` + `api/app.py`
 - **Windows demo client**: `scripts/windows_webcam_client.py`
+- **Webcam detection demo (experimental)**: `scripts/predict_webcam_det.py`
 
 ### Data flow
 
@@ -214,6 +217,53 @@ These flags also work with the MediaPipe dataset builder:
 python3 scripts/prepare_cls_dataset_mediapipe.py --max_total 10000 --balance --test 0.1
 ```
 
+### Dataset sanity checks (recommended)
+
+After building a dataset, it’s worth doing a quick scan to confirm:
+- expected folder structure exists (`train|val|test` × `real|spoof`)
+- counts look reasonable per split/class
+- no unexpected non-image files are mixed into class folders
+
+Example (one-pass recursive scan for `datasets/spoof_mp_face_cls_30k/`):
+
+```bash
+python3 - <<'PY'
+from pathlib import Path
+from collections import Counter
+
+root = Path("datasets/spoof_mp_face_cls_30k")
+img_exts = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+
+counts = Counter()
+non_images = []
+
+for p in root.rglob("*"):
+    if not p.is_file():
+        continue
+    if ":" in p.name:  # Windows ADS artifacts like :Zone.Identifier (rare on WSL)
+        continue
+    if p.suffix.lower() in img_exts:
+        rel = p.relative_to(root).parts
+        split = rel[0] if len(rel) > 0 else "UNKNOWN"
+        label = rel[1] if len(rel) > 1 else "UNKNOWN"
+        counts[(split, label)] += 1
+    else:
+        non_images.append(str(p))
+
+print("root:", root.resolve())
+print("total_images:", sum(counts.values()))
+for split in ("train", "val", "test"):
+    for label in ("real", "spoof"):
+        print(f"{split}/{label}:", counts.get((split, label), 0))
+if non_images:
+    print("\\nnon-image files (examples):")
+    for x in non_images[:10]:
+        print(" -", x)
+PY
+```
+
+Note on `*.cache`: Ultralytics may create dataset cache files like `train.cache` / `val.cache` at the dataset root. These are **not images** and are safe to delete; Ultralytics will regenerate them.
+
 ### 2) Train
 
 Trains a YOLO classification model and writes outputs under `runs/spoof_face_cls/` (or whichever dataset you built).
@@ -256,6 +306,77 @@ python3 scripts/export_cls.py \
   --format onnx \
   --imgsz 224 \
   --device cpu
+```
+
+---
+
+## Experimental: single-stage YOLO detection (real vs fake faces)
+
+This experiment replaces the 2-stage pipeline:
+
+```text
+Face Detection → Face Crop → Classification
+```
+
+with a **single YOLO detection model** that predicts:
+- face bounding boxes
+- class: `real` vs `fake`
+
+### 1) Prepare a YOLO detection dataset (MediaPipe auto-annotations)
+
+This generates YOLO-format labels from MediaPipe face detections:
+
+- **Dataset root**: `datasets/spoof_face_det_mp/`
+- **Structure**:
+  - `images/{train,val,test}/...`
+  - `labels/{train,val,test}/...`
+  - `dataset.yaml`
+- **Classes**: `0=real` (source folder `live`), `1=fake` (source folder `spoof`)
+- **Label format**: `class_id x_center y_center width height` (all normalized 0–1)
+
+```bash
+python3 scripts/prepare_det_dataset_mediapipe.py \
+  --input data_set \
+  --output datasets/spoof_face_det_mp \
+  --val 0.1 \
+  --test 0.1 \
+  --seed 42 \
+  --mp_min_conf 0.6 \
+  --mp_pad 0.20 \
+  --mp_pad_top_mult 1.5
+```
+
+Notes:
+- The script writes **one box per image** (the “best” detected face).
+- If MediaPipe can’t find a face, the image is counted as `no_face` and skipped.
+
+### 2) Train a YOLO detection model
+
+```bash
+python3 scripts/train_det.py \
+  --data datasets/spoof_face_det_mp/dataset.yaml \
+  --model yolo26n.pt \
+  --epochs 100 \
+  --imgsz 640 \
+  --device auto
+```
+
+### 3) Real-time webcam inference (local overlay)
+
+Install webcam deps (Linux/WSL GUI required):
+
+```bash
+pip install opencv-python
+```
+
+Run:
+
+```bash
+python3 scripts/predict_webcam_det.py \
+  --weights runs/spoof_face_det/exp/weights/best.pt \
+  --cam 0 \
+  --imgsz 640 \
+  --conf 0.25
 ```
 
 ---
@@ -345,6 +466,8 @@ python scripts/windows_webcam_client.py --api http://127.0.0.1:8011 --mode url -
 - **Weights not found**
   - Ensure `SPOOF_WEIGHTS` points to an existing `best.pt`, or train a model first.
   - Check `/health` to see what weights path the API expects.
+- **`train.cache` / `val.cache` appears in your dataset folder**
+  - These are Ultralytics dataset cache files, not corruption. Safe to delete; they will be regenerated.
 - **WSL stability during training**
   - Use fewer dataloader workers (`--workers 0` is the default on WSL).
 - **CUDA issues in the API**

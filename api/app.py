@@ -22,7 +22,8 @@ from PIL import Image
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_WEIGHTS = REPO_ROOT / "runs" / "spoof_face_cls" / "exp-3" / "weights" / "best.pt"
+# DEFAULT_WEIGHTS = REPO_ROOT / "runs" / "spoof_face_cls" / "exp-3" / "weights" / "best.pt"
+DEFAULT_WEIGHTS = REPO_ROOT / "runs" / "spoof_face_det" / "exp-2" / "weights" / "best.pt"
 
 log = logging.getLogger("api")
 
@@ -31,9 +32,20 @@ class PredictURLRequest(BaseModel):
     url: HttpUrl
 
 
+class DetectionBox(BaseModel):
+    x1: int
+    y1: int
+    x2: int
+    y2: int
+    label: str
+    confidence: float
+
+
 class PredictResponse(BaseModel):
     label: str
     confidence: float
+    task: str  # "classify" | "detect"
+    detections: list[DetectionBox] | None = None
 
 
 def _env_truthy(name: str) -> bool:
@@ -107,7 +119,9 @@ def predict_pil(im: Image.Image, device: str = "cpu") -> PredictResponse:
     device = _resolve_device(device)
     log.info("predict_pil(): device=%s", device)
     model = get_model(force_cpu=str(device).lower() == "cpu")
-    # For classification, Ultralytics returns Results with .probs and .names
+    # Ultralytics returns:
+    # - classification: Results with .probs and .names
+    # - detection:      Results with .boxes and .names
     try:
         res = model.predict(im, verbose=False, device=device)[0]
     except Exception as e:
@@ -117,13 +131,46 @@ def predict_pil(im: Image.Image, device: str = "cpu") -> PredictResponse:
             res = model.predict(im, verbose=False, device="cpu")[0]
         else:
             raise
-    if getattr(res, "probs", None) is None:
-        raise HTTPException(status_code=500, detail="Model did not return classification probabilities.")
-    idx = int(res.probs.top1)
-    label = str(res.names.get(idx, idx))
-    conf = float(res.probs.top1conf)
-    log.info("predict_pil(): label=%s conf=%.4f", label, conf)
-    return PredictResponse(label=label, confidence=conf)
+
+    # Classification path
+    if getattr(res, "probs", None) is not None:
+        idx = int(res.probs.top1)
+        label = str(res.names.get(idx, idx))
+        conf = float(res.probs.top1conf)
+        log.info("predict_pil(): task=classify label=%s conf=%.4f", label, conf)
+        return PredictResponse(label=label, confidence=conf, task="classify", detections=None)
+
+    # Detection path
+    boxes = getattr(res, "boxes", None)
+    if boxes is None:
+        raise HTTPException(status_code=500, detail="Model did not return classification probabilities or detection boxes.")
+
+    names = getattr(res, "names", {}) or {}
+    dets: list[DetectionBox] = []
+    best_any: tuple[str, float] = ("no_face", 0.0)
+    best_fake: tuple[str, float] = ("fake", 0.0)
+
+    # policy: if any fake exists, return highest-confidence fake; else return highest-confidence of any class
+    for b in boxes:
+        xyxy = b.xyxy[0].tolist()
+        cls_id = int(b.cls[0].item())
+        conf = float(b.conf[0].item())
+        label = str(names.get(cls_id, cls_id))
+        x1, y1, x2, y2 = map(int, xyxy)
+        dets.append(DetectionBox(x1=x1, y1=y1, x2=x2, y2=y2, label=label, confidence=conf))
+
+        if conf > best_any[1]:
+            best_any = (label, conf)
+        if str(label).lower() in {"spoof", "fake"} and conf > best_fake[1]:
+            best_fake = (label, conf)
+
+    if best_fake[1] > 0.0:
+        out_label, out_conf = best_fake
+    else:
+        out_label, out_conf = best_any
+
+    log.info("predict_pil(): task=detect label=%s conf=%.4f dets=%d", out_label, out_conf, len(dets))
+    return PredictResponse(label=out_label, confidence=out_conf, task="detect", detections=dets)
 
 
 app = FastAPI(title="Spoof Detection API", version="1.0.0")
@@ -144,7 +191,7 @@ def health() -> dict:
     weights = Path(os.getenv("SPOOF_WEIGHTS", str(DEFAULT_WEIGHTS))).expanduser()
     if not weights.is_absolute():
         weights = (REPO_ROOT / weights).resolve()
-    return {"ok": True, "weights_exists": weights.exists(), "weights": str(weights), "expects_face_crop": True}
+    return {"ok": True, "weights_exists": weights.exists(), "weights": str(weights)}
 
 
 @app.post("/predict/upload", response_model=PredictResponse)

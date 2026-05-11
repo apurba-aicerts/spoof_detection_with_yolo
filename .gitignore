@@ -22,6 +22,7 @@ datasets/
 runs/
 test_image/
 face_crop/
+datasets_det
 
 # Model/export artifacts (generated)
 *.onnx

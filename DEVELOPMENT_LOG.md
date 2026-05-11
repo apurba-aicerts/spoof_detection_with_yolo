@@ -41,6 +41,8 @@ Use this section to quickly understand the order of major changes. Details live 
 - **2026-04-28**: Switched to **face ROI** training; introduced two reproducible dataset-prep strategies:
   - **RetinaFace `*_BB.txt`** face crops (offline boxes in dataset, scaled from 224-ref space)
   - **MediaPipe BlazeFace** face crops (run detector during dataset prep to match testing crop behavior)
+- **2026-04-30**: Documented dataset verification scans + recorded split/class counts for `datasets/spoof_mp_face_cls_30k`.
+- **2026-04-30**: Added an experimental **single-stage YOLO detection** pipeline (MediaPipe auto-annotations → YOLO detect training → webcam demo).
 
 ---
 
@@ -76,6 +78,11 @@ Keep this section updated as you encounter new classes of problems.
 - **Strategy**:
   - Cache/reuse MediaPipe detector instances during dataset prep (avoid per-image initialization).
   - Start with smaller `--max_total` to validate crop quality and stability, then scale up.
+- **Lesson**: Treat dataset prep like a production batch job—avoid per-item initialization and scale up gradually.
+
+### Prepared datasets may include Ultralytics `*.cache` files
+- **Problem**: Dataset roots may contain `train.cache` / `val.cache`, which can look like unexpected “non-image files” during directory scans.
+- **Lesson**: These are normal Ultralytics artifacts; safe to delete and they’ll be regenerated.
 
 ---
 
@@ -223,5 +230,53 @@ Copy/paste this when you make a meaningful change mid-week.
   - MediaPipe dataset builder + args: `scripts/prepare_cls_dataset_mediapipe.py`
   - MediaPipe crop algorithm (pad/top padding): `api/mediapipe_crop.py`
   - Evidence of dataset `*_BB.txt` assumption + scaling: `data_set/README` and `scripts/prepare_cls_dataset.py`
+
+### 2026-04-29 — Record prepared dataset scan (one-pass) for `spoof_mp_face_cls_30k`
+- **What changed**: Added dataset verification guidance to `README.md` (one-pass recursive scan + explanation of `*.cache` files).
+- **Why**: Quick scans catch folder-structure mistakes early and prevent training on partially-built datasets.
+- **Evidence (scan results)**:
+  - Dataset root: `datasets/spoof_mp_face_cls_30k`
+  - Total images: **27914**
+  - `train/real`: **11851**, `train/spoof`: **10485**
+  - `val/real`: **1476**, `val/spoof`: **1318**
+  - `test/real`: **1485**, `test/spoof`: **1299**
+  - Non-image files: `train.cache`, `val.cache` (expected Ultralytics artifacts)
+
+### 2026-04-30 — Experiment: single-stage YOLO detection for real vs fake faces
+- **Objective**: Replace the 2-stage pipeline (detect → crop → classify) with a **single detection model** that outputs face boxes + `real`/`fake` class.
+- **What changed**:
+  - Added `scripts/prepare_det_dataset_mediapipe.py` to auto-annotate images using MediaPipe and write YOLO detection labels:
+    - class `0=real` (source folder contains `live`)
+    - class `1=fake` (source folder contains `spoof`)
+  - Added `scripts/train_det.py` for Ultralytics detection training using `dataset.yaml`.
+  - Added `scripts/predict_webcam_det.py` as a quick webcam overlay demo for multi-face detection + labeling.
+- **Why**:
+  - Single-model deployment (simpler ops)
+  - Multi-face handling in one forward pass
+  - Potentially better end-to-end robustness by jointly learning localization + liveness
+- **Trade-offs / risks**:
+  - Labels are **auto-generated** (MediaPipe); annotation noise can cap performance.
+  - The first pass uses **best face only** per image; extend to multi-face labeling if you expect group images.
+  - Detection training adds a localization objective; may need more data/epochs/hyperparams to match a dedicated classifier.
+
+### 2026-04-30 — Update testing stack for detection + mitigate intermittent native abort
+- **Problem observed**: Running detection batch inference sometimes aborted with:
+  - `free(): double free detected in tcache 2`
+  - This did **not** appear in classification inference, likely because detection runs additional native ops (e.g., NMS) under the hood.
+- **What changed**:
+  - Added detection folder tester: `scripts/predict_folder_det.py` (counts `real`/`fake`/`no_face` and can copy predicted `fake` images to a review folder).
+  - Updated API to support both tasks:
+    - Classification models return top-1 (`res.probs`)
+    - Detection models return summary label + `detections[]` (`res.boxes`)
+    - Code: `api/app.py`
+  - Updated Windows webcam client overlay to treat both `spoof` and `fake` as “red” labels: `scripts/windows_webcam_client.py`
+- **Mitigation applied** (to reduce native teardown/allocator instability):
+  - Force single-threaded native execution (OpenMP/BLAS) in prediction scripts via env vars:
+    - `OMP_NUM_THREADS=1`, `MKL_NUM_THREADS=1`, `OPENBLAS_NUM_THREADS=1`, `NUMEXPR_NUM_THREADS=1`
+  - Force torch thread limits when available:
+    - `torch.set_num_threads(1)`, `torch.set_num_interop_threads(1)`
+  - Use streaming inference (`stream=True`) to reduce large result accumulation during folder prediction.
+- **Repro command**:
+  - `./spoof_env/bin/python scripts/predict_folder_det.py --weights runs/spoof_face_det/exp-2/weights/best.pt --source test_image --conf 0.25 --device cpu`
 
 

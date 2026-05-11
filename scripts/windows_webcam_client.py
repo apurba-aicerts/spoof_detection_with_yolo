@@ -88,7 +88,7 @@ def main() -> None:
                     (10, 30),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     1.0,
-                    (0, 0, 255) if str(label).lower() == "spoof" else (0, 255, 0),
+                    (0, 0, 255) if str(label).lower() in {"spoof", "fake"} else (0, 255, 0),
                     2,
                 )
             except Exception as e:

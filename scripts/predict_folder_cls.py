@@ -9,8 +9,15 @@ prints class counts, and copies images predicted as `--spoof_name` into
 from __future__ import annotations
 
 import argparse
+import os
 from collections import Counter
 from pathlib import Path
+
+# Reduce chance of rare native aborts in mixed stacks (OpenMP/BLAS teardown).
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("MKL_NUM_THREADS", "1")
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
 
 from ultralytics import YOLO
 
@@ -43,10 +50,19 @@ def main() -> None:
     if not source.exists():
         raise SystemExit(f"Source not found: {source}")
 
+    try:
+        import torch  # type: ignore
+
+        torch.set_num_threads(1)
+        torch.set_num_interop_threads(1)
+    except Exception:
+        pass
+
     model = YOLO(str(weights))
     results = model.predict(
         source=str(source),
         verbose=False,
+        stream=True,
     )
 
     counts: Counter[str] = Counter()
